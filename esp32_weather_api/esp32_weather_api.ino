@@ -5,63 +5,108 @@
 
 const char* ssid = "---";
 const char* password = "---";
-const char* sensorId = "0";
+const char* sensorId = "---";
+char i = 0;
+const int ledPin = 2;
+long resetti = 0;
 
 WebServer server(80);
 
-AM2320 th(&Wire);
+AM2320 th;
 
 StaticJsonDocument<250> jsonDocument;
 char buffer[250];
 
-void connect_to_wifi() {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-
-    while ( WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.println("Connecting to WiFi..");
-    }
-    Serial.println("Connected to the WiFi network");
+void blink_led(int times)
+{
+  int j = 0;
+  for (j; j < times; j++)
+  {
+    digitalWrite(ledPin, HIGH);
+    delay(2);
+    digitalWrite(ledPin, LOW);
+    delay(150);
+  }
 }
 
-void create_json() {
-  read_sensor();  
-  jsonDocument.clear();  
+bool connect_to_wifi()
+{
+  if (WiFi.status() == WL_CONNECTED) {
+    digitalWrite(ledPin, LOW);
+    return true;
+  }
+
+  digitalWrite(ledPin, HIGH);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  int j = 0;
+  for (j; j < 60; j++) {
+    Serial.println("Connecting to WiFi..");
+    if (WiFi.status() == WL_CONNECTED) {
+      digitalWrite(ledPin, LOW);
+      Serial.println("Connected to the Wifi network");
+      return true;
+    }
+    delay(1000);
+  }
+  Serial.println("restart");
+  ESP.restart();
+  return false;
+}
+
+void create_json()
+{
+  jsonDocument.clear();
   jsonDocument["sensorId"] = sensorId;
-  jsonDocument["temperature"] = th.cTemp;
-  jsonDocument["humidity"] = th.Humidity;
+  jsonDocument["temperature"] = th.getTemperature();
+  jsonDocument["humidity"] = th.getHumidity();
   serializeJson(jsonDocument, buffer);
 }
 
-void getStatus() {
-    Serial.println("Get Status");
-    create_json();
-    server.send(200, "application/json", buffer);
+void getStatus()
+{
+  Serial.println("Get Status");
+  create_json();
+  server.send(200, "application/json", buffer);
+  blink_led(3);
 }
 
-void setup_routing() {
-    server.on("/", getStatus);
-    server.begin();
+void setup_routing()
+{
+  server.on("/", getStatus);
+  server.begin();
 }
 
-void read_sensor() {
-   while (th.Read() == 0) {
-   }
-}
-
-void setup() {
+void setup()
+{
+  pinMode(ledPin, OUTPUT);
+  blink_led(12);
+  digitalWrite(ledPin, HIGH);
   Serial.begin(9600);
-  Wire.begin();
+  th.begin();
   connect_to_wifi();
   setup_routing();
-
 }
 
-void loop() {
+void loop()
+{
+  th.measure();
   server.handleClient();
-  delay(500);
-  read_sensor();
-  Serial.println(th.cTemp);
-  Serial.println(WiFi.localIP());
+  delay(100);
+  if (i++ > 100)
+  {
+    i = 0;
+    Serial.println(th.getTemperature());
+    Serial.println(WiFi.localIP());
+    connect_to_wifi();
+    blink_led(1);
+  }
+
+  if (resetti++ > 36000)
+  {
+    resetti = 0;
+    Serial.println("restart");
+    ESP.restart();
+  }
 }
